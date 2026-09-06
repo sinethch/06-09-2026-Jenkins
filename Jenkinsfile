@@ -70,8 +70,8 @@ pipeline {
         stage('CI \u2014 Backend Tests') {
             steps {
                 dir('backend') {           // cd into backend/ folder
-                    sh 'npm ci'
-                    sh 'npm test'
+                    sh 'docker run --rm -v "$PWD":/workspace -w /workspace node:20-alpine npm ci'
+                    sh 'docker run --rm -v "$PWD":/workspace -w /workspace node:20-alpine npm test'
                 }
             }
         }
@@ -88,8 +88,8 @@ pipeline {
         stage('CI \u2014 Frontend Build') {
             steps {
                 dir('frontend') {          // cd into frontend/ folder
-                    sh 'npm ci'
-                    sh 'npm run build'
+                    sh 'docker run --rm -v "$PWD":/workspace -w /workspace node:20-alpine npm ci'
+                    sh 'docker run --rm -v "$PWD":/workspace -w /workspace node:20-alpine npm run build'
                 }
             }
         }
@@ -141,10 +141,10 @@ pipeline {
             steps {
                 sh '''
                     echo "=== Auditing Backend npm Packages ==="
-                    cd backend && npm audit --audit-level=high || true
+                    docker run --rm -v "$PWD/backend":/workspace -w /workspace node:20-alpine npm audit --audit-level=high || true
 
                     echo "=== Auditing Frontend npm Packages ==="
-                    cd ../frontend && npm audit --audit-level=high || true
+                    docker run --rm -v "$PWD/frontend":/workspace -w /workspace node:20-alpine npm audit --audit-level=high || true
                 '''
             }
         }
@@ -385,10 +385,10 @@ pipeline {
             '''
         }
         success {
-            echo "\u2705 Pipeline SUCCESS \u2014 Branch: ${BRANCH_NAME} | Commit: ${GIT_COMMIT}"
+            echo "Pipeline SUCCESS - Branch: ${env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown'} | Commit: ${env.GIT_COMMIT ?: 'unknown'}"
         }
         failure {
-            echo "\u274c Pipeline FAILED \u2014 Branch: ${BRANCH_NAME} | Check the stage logs above."
+            echo "Pipeline FAILED - Branch: ${env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown'} | Check the stage logs above."
         }
     }
 
