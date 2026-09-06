@@ -109,10 +109,10 @@ pipeline {
             steps {
                 sh '''
                     echo "Building backend Docker image (ci-check only, not pushed)..."
-                    docker build -t backend:ci-check ./backend
+                    docker build --load -t backend:ci-check ./backend
 
                     echo "Building frontend Docker image (ci-check only, not pushed)..."
-                    docker build -t frontend:ci-check ./frontend
+                    docker build --load -t frontend:ci-check ./frontend
 
                     echo "Docker image verification passed!"
                 '''
