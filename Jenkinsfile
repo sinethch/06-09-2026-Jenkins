@@ -343,7 +343,7 @@ pipeline {
                         CLIENT_URL="${CLIENT_URL}" \
                         BACKEND_PORT="${BACKEND_PORT}" \
                         FRONTEND_PORT="${FRONTEND_PORT}" \
-                        docker compose -p ecommerce -f docker-compose.deploy.yml pull
+                        docker compose -p 04-09-2026-s -f docker-compose.deploy.yml pull
 
                         # Restart all containers with new images
                         # '--remove-orphans' cleans up containers from old services
@@ -352,7 +352,7 @@ pipeline {
                         CLIENT_URL="${CLIENT_URL}" \
                         BACKEND_PORT="${BACKEND_PORT}" \
                         FRONTEND_PORT="${FRONTEND_PORT}" \
-                        docker compose -p ecommerce -f docker-compose.deploy.yml up -d --remove-orphans
+                        docker compose -p 04-09-2026-s -f docker-compose.deploy.yml up -d --remove-orphans
 
                         # Remove Docker images older than 24h to free disk space
                         docker image prune -af --filter "until=24h" || true
