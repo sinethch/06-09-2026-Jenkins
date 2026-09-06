@@ -12,9 +12,10 @@ Only the Jenkins Compose file is required on the server. You do not need to clon
 - The UI uses host port `8081` by default and container port `8080`.
 - The controller is limited to one CPU and 2 GB memory.
 - Jenkins agent port `50000` is not published.
-- The Docker socket is not mounted, so Jenkins jobs cannot directly control the host Docker daemon.
+- The Jenkins image contains the Docker CLI required by the pipeline.
+- Docker socket access is explicitly enabled for the pipeline's image-build and deployment stages.
 
-Docker resources are still shared by all users on the server. These limits reduce the risk of interference, but they cannot replace administrator approval or a separate VM when strict isolation is required.
+Docker resources are still shared by all users on the server. The socket also allows Jenkins jobs to control the host Docker daemon, so this setup requires administrator approval and trusted pipeline code. A separate VM or remote build agent is safer for untrusted jobs.
 
 ## Server setup
 
@@ -25,8 +26,11 @@ mkdir -p ~/jenkins-isolated
 cd ~/jenkins-isolated
 curl -fsSL -o docker-compose.jenkins.yml \
   https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/docker-compose.jenkins.yml
+curl -fsSL -o Dockerfile.jenkins \
+  https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/Dockerfile.jenkins
+export DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml config
-docker compose -p sineth-jenkins -f docker-compose.jenkins.yml pull
+docker compose -p sineth-jenkins -f docker-compose.jenkins.yml build
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml up -d
 ```
 
@@ -83,7 +87,10 @@ docker compose -p sineth-jenkins -f docker-compose.jenkins.yml stop
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml start
 
 # Update the Jenkins image and recreate only this instance
-docker compose -p sineth-jenkins -f docker-compose.jenkins.yml pull
+curl -fsSL -o Dockerfile.jenkins \
+  https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/Dockerfile.jenkins
+export DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+docker compose -p sineth-jenkins -f docker-compose.jenkins.yml build --pull
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml up -d
 ```
 
@@ -98,6 +105,6 @@ docker run --rm \
 
 ## Build-job restrictions
 
-Keep the Jenkins controller at one executor initially. Do not mount `/var/run/docker.sock`; that would give jobs broad control over the shared server. If builds need Docker, use a dedicated remote agent or an approved rootless builder with its own resource limits.
+Keep the Jenkins controller at one executor initially. Because this pipeline uses Docker, the Compose file mounts `/var/run/docker.sock`. This gives jobs broad control over the shared server: allow only trusted jobs and do not accept unreviewed pipeline changes. For stronger isolation, use a dedicated remote agent or an approved rootless builder with its own resource limits.
 
-Ask the server administrator to confirm the available disk, memory, firewall rule, and Docker permissions before starting the container.
+Ask the server administrator to confirm the available disk, memory, firewall rule, Docker permissions, and approval for Docker socket access before starting the container.

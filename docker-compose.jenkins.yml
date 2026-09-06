@@ -1,11 +1,17 @@
 services:
   jenkins:
-    image: jenkins/jenkins:lts-jdk21
+    build:
+      context: .
+      dockerfile: Dockerfile.jenkins
+    image: sineth-jenkins:lts-jdk21-docker
     restart: unless-stopped
     ports:
       - "${JENKINS_PORT:-8081}:8080"
     volumes:
       - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
     networks:
       - jenkins_network
     mem_limit: 2g

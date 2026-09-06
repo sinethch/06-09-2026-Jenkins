@@ -165,7 +165,8 @@ This repository also includes an independent, Dockerized Jenkins controller for 
 - Separate persistent volume and Docker network
 - Default limit of 1 CPU and 2 GB memory
 - Jenkins agent port `50000` is not exposed
-- The host Docker socket is not mounted
+- Docker CLI is included for the pipeline's build, scan, and deployment stages
+- The host Docker socket is mounted; administrator approval is required
 
 From the server, run:
 
@@ -174,7 +175,10 @@ mkdir -p ~/jenkins-isolated
 cd ~/jenkins-isolated
 curl -fsSL -o docker-compose.jenkins.yml \
   https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/docker-compose.jenkins.yml
-docker compose -p sineth-jenkins -f docker-compose.jenkins.yml pull
+curl -fsSL -o Dockerfile.jenkins \
+  https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/Dockerfile.jenkins
+export DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+docker compose -p sineth-jenkins -f docker-compose.jenkins.yml build
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml up -d
 ```
 
