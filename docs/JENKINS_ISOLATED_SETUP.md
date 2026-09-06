@@ -2,6 +2,8 @@
 
 This repository includes a separate Jenkins controller for the shared server. It does not modify or connect to the existing Jenkins instance on port `8080`.
 
+Only the Jenkins Compose file is required on the server. You do not need to clone the full MERN application repository to start this Jenkins controller.
+
 ## Isolation guarantees
 
 - The controller is started from `docker-compose.jenkins.yml`, separate from the application Compose files.
@@ -21,12 +23,14 @@ Run these commands as a user allowed to use Docker:
 ```bash
 mkdir -p ~/jenkins-isolated
 cd ~/jenkins-isolated
-git clone https://github.com/sinethch/06-09-2026-Jenkins.git repository
-cd repository
+curl -fsSL -o docker-compose.jenkins.yml \
+  https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/docker-compose.jenkins.yml
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml config
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml pull
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml up -d
 ```
+
+The MERN application is a separate deployment. It should continue to use its own application Compose file and project name. Jenkins may check out the application repository inside a Jenkins job workspace when a pipeline needs the source, but that source does not need to be present beside this Compose file on the server.
 
 The `-p sineth-jenkins` option is important. Always use it when inspecting, starting, stopping, or updating this Jenkins instance.
 

@@ -170,11 +170,15 @@ This repository also includes an independent, Dockerized Jenkins controller for 
 From the server, run:
 
 ```bash
-git clone https://github.com/sinethch/06-09-2026-Jenkins.git
-cd 06-09-2026-Jenkins
+mkdir -p ~/jenkins-isolated
+cd ~/jenkins-isolated
+curl -fsSL -o docker-compose.jenkins.yml \
+  https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/docker-compose.jenkins.yml
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml pull
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml up -d
 ```
+
+Only `docker-compose.jenkins.yml` is needed for this Jenkins instance. The MERN application remains a separate deployment; a Jenkins pipeline can check out the application repository into its own job workspace when required.
 
 Then open `http://<YOUR_SERVER_HOST>:8081/`. Retrieve the initial administrator password with:
 
