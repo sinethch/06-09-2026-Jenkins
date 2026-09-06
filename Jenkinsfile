@@ -132,10 +132,10 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         stage('Security \u2014 Dependency Audit') {
             when {
-                anyOf {
-                    branch 'main'
-                    branch 'staging'
-                    branch 'qa'
+                expression {
+                    def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
+                    branchName = branchName.replaceFirst(/^origin\//, '')
+                    return ['main', 'staging', 'qa'].contains(branchName)
                 }
             }
             steps {
@@ -168,10 +168,10 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         stage('Security \u2014 Trivy Container Scan') {
             when {
-                anyOf {
-                    branch 'main'
-                    branch 'staging'
-                    branch 'qa'
+                expression {
+                    def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
+                    branchName = branchName.replaceFirst(/^origin\//, '')
+                    return ['main', 'staging', 'qa'].contains(branchName)
                 }
             }
             steps {
@@ -222,22 +222,23 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         stage('CD \u2014 Build & Push to GHCR') {
             when {
-                anyOf {
-                    branch 'main'
-                    branch 'staging'
-                    branch 'qa'
+                expression {
+                    def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
+                    branchName = branchName.replaceFirst(/^origin\//, '')
+                    return ['main', 'staging', 'qa'].contains(branchName)
                 }
             }
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_TOKEN', variable: 'GH_TOKEN')]) {
                     sh '''
+                        DEPLOY_BRANCH="${BRANCH_NAME:-${GIT_BRANCH#origin/}}"
                         # Compute a short 7-character commit hash (e.g. "abc1234")
                         SHORT_SHA=$(git rev-parse --short HEAD)
-                        IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}"
+                        IMAGE_TAG="${DEPLOY_BRANCH}-${SHORT_SHA}"
                         REPO="${REGISTRY}/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}"
 
                         echo "=== Build & Push Summary ==="
-                        echo "Environment : ${BRANCH_NAME}"
+                        echo "Environment : ${DEPLOY_BRANCH}"
                         echo "Image tag   : ${IMAGE_TAG}"
                         echo "Registry    : ${REPO}"
 
@@ -251,23 +252,23 @@ pipeline {
                         echo "Building backend image..."
                         docker build \
                             -t "${REPO}/backend:${IMAGE_TAG}" \
-                            -t "${REPO}/backend:${BRANCH_NAME}-latest" \
+                            -t "${REPO}/backend:${DEPLOY_BRANCH}-latest" \
                             ./backend
 
                         echo "Pushing backend to GHCR..."
                         docker push "${REPO}/backend:${IMAGE_TAG}"
-                        docker push "${REPO}/backend:${BRANCH_NAME}-latest"
+                        docker push "${REPO}/backend:${DEPLOY_BRANCH}-latest"
 
                         # ── Frontend ────────────────────────────────────────
                         echo "Building frontend image..."
                         docker build \
                             -t "${REPO}/frontend:${IMAGE_TAG}" \
-                            -t "${REPO}/frontend:${BRANCH_NAME}-latest" \
+                            -t "${REPO}/frontend:${DEPLOY_BRANCH}-latest" \
                             ./frontend
 
                         echo "Pushing frontend to GHCR..."
                         docker push "${REPO}/frontend:${IMAGE_TAG}"
-                        docker push "${REPO}/frontend:${BRANCH_NAME}-latest"
+                        docker push "${REPO}/frontend:${DEPLOY_BRANCH}-latest"
 
                         echo "All images pushed to GHCR successfully!"
                     '''
@@ -298,24 +299,25 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         stage('CD \u2014 Deploy') {
             when {
-                anyOf {
-                    branch 'main'
-                    branch 'staging'
-                    branch 'qa'
+                expression {
+                    def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
+                    branchName = branchName.replaceFirst(/^origin\//, '')
+                    return ['main', 'staging', 'qa'].contains(branchName)
                 }
             }
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_TOKEN', variable: 'GH_TOKEN')]) {
                     sh '''
+                        DEPLOY_BRANCH="${BRANCH_NAME:-${GIT_BRANCH#origin/}}"
                         # Same tag formula as Stage 7 — must match exactly
                         SHORT_SHA=$(git rev-parse --short HEAD)
-                        IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}"
+                        IMAGE_TAG="${DEPLOY_BRANCH}-${SHORT_SHA}"
                         REPO="${REGISTRY}/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}"
                         BACKEND_IMAGE="${REPO}/backend:${IMAGE_TAG}"
                         FRONTEND_IMAGE="${REPO}/frontend:${IMAGE_TAG}"
 
                         echo "=== Deployment Starting ==="
-                        echo "Environment  : ${BRANCH_NAME}"
+                        echo "Environment  : ${DEPLOY_BRANCH}"
                         echo "Backend      : ${BACKEND_IMAGE}"
                         echo "Frontend     : ${FRONTEND_IMAGE}"
                         echo "Deploy path  : ${DEPLOY_PATH}"
