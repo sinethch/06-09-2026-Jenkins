@@ -36,7 +36,7 @@ pipeline {
         GITHUB_REPO_OWNER = 'sinethch'                   // Your GitHub username
         GITHUB_REPO_NAME  = '06-09-2026-jenkins'         // Lowercase repo name (GHCR requires lowercase)
         REGISTRY          = 'ghcr.io'                    // GitHub Container Registry
-        DEPLOY_PATH       = '/root/ecommerce'            // Where on the server to deploy
+        DEPLOY_PATH       = '/var/jenkins_home/deploy/ecommerce' // Writable Jenkins deployment workspace
         CLIENT_URL        = 'http://167.172.77.230:5173' // Your app's public URL
         BACKEND_PORT      = '5050'                       // Port backend maps to on host
         FRONTEND_PORT     = '5173'                       // Port frontend maps to on host
@@ -343,7 +343,7 @@ pipeline {
                         CLIENT_URL="${CLIENT_URL}" \
                         BACKEND_PORT="${BACKEND_PORT}" \
                         FRONTEND_PORT="${FRONTEND_PORT}" \
-                        docker compose -f docker-compose.deploy.yml pull
+                        docker compose -p ecommerce -f docker-compose.deploy.yml pull
 
                         # Restart all containers with new images
                         # '--remove-orphans' cleans up containers from old services
@@ -352,7 +352,7 @@ pipeline {
                         CLIENT_URL="${CLIENT_URL}" \
                         BACKEND_PORT="${BACKEND_PORT}" \
                         FRONTEND_PORT="${FRONTEND_PORT}" \
-                        docker compose -f docker-compose.deploy.yml up -d --remove-orphans
+                        docker compose -p ecommerce -f docker-compose.deploy.yml up -d --remove-orphans
 
                         # Remove Docker images older than 24h to free disk space
                         docker image prune -af --filter "until=24h" || true
