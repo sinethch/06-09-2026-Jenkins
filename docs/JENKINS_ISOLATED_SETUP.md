@@ -25,9 +25,9 @@ Run these commands as a user allowed to use Docker:
 mkdir -p ~/jenkins-isolated
 cd ~/jenkins-isolated
 curl -fsSL -o docker-compose.jenkins.yml \
-  https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/docker-compose.jenkins.yml
+  "https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/docker-compose.jenkins.yml?cb=$(date +%s)"
 curl -fsSL -o Dockerfile.jenkins \
-  https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/Dockerfile.jenkins
+  "https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/Dockerfile.jenkins?cb=$(date +%s)"
 export DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml config
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml build
@@ -88,7 +88,7 @@ docker compose -p sineth-jenkins -f docker-compose.jenkins.yml start
 
 # Update the Jenkins image and recreate only this instance
 curl -fsSL -o Dockerfile.jenkins \
-  https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/Dockerfile.jenkins
+  "https://raw.githubusercontent.com/sinethch/06-09-2026-Jenkins/main/Dockerfile.jenkins?cb=$(date +%s)"
 export DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml build --pull
 docker compose -p sineth-jenkins -f docker-compose.jenkins.yml up -d
