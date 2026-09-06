@@ -36,7 +36,7 @@ pipeline {
         GITHUB_REPO_OWNER = 'sinethch'                   // Your GitHub username
         GITHUB_REPO_NAME  = '06-09-2026-jenkins'         // Lowercase repo name (GHCR requires lowercase)
         REGISTRY          = 'ghcr.io'                    // GitHub Container Registry
-        DEPLOY_PATH       = '/var/jenkins_home/deploy/ecommerce' // Writable Jenkins deployment workspace
+        DEPLOY_PATH       = '/var/lib/jenkins/deploy/ecommerce' // Writable system-Jenkins deployment workspace
         CLIENT_URL        = 'http://167.172.77.230:5173' // Your app's public URL
         BACKEND_PORT      = '5050'                       // Port backend maps to on host
         FRONTEND_PORT     = '5173'                       // Port frontend maps to on host
