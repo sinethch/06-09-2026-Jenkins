@@ -1,0 +1,395 @@
+// ============================================================================
+// Jenkinsfile — MERN Stack CI/CD Pipeline
+// Repo: https://github.com/sinethch/06-09-2026-Jenkins
+// Server: 167.172.77.230
+// ============================================================================
+//
+// HOW THIS WORKS (for beginners):
+//
+//  1. You push code to GitHub
+//  2. GitHub sends a "webhook" (HTTP notification) to Jenkins on your server
+//  3. Jenkins picks up the notification and runs this file
+//  4. This file defines every step — test, build, scan, deploy
+//
+// BRANCH STRATEGY:
+//  ┌─────────────────────┬───────────────────────────────────┐
+//  │ Branch              │ Stages that run                   │
+//  ├─────────────────────┼───────────────────────────────────┤
+//  │ feature/*, fix/*,   │ CI only (test + build + verify)   │
+//  │ hotfix/*            │                                   │
+//  ├─────────────────────┼───────────────────────────────────┤
+//  │ main, staging, qa   │ CI + Security + CD (full deploy)  │
+//  └─────────────────────┴───────────────────────────────────┘
+//
+// ============================================================================
+
+pipeline {
+
+    // 'agent any' = run on any available Jenkins node/executor
+    // Since you have a single server, Jenkins runs everything on itself
+    agent any
+
+    // ─── Global Variables ────────────────────────────────────────────────────
+    // These are like "constants" you can refer to throughout the pipeline.
+    // Jenkins also exports these as shell environment variables automatically.
+    environment {
+        GITHUB_REPO_OWNER = 'sinethch'                   // Your GitHub username
+        GITHUB_REPO_NAME  = '06-09-2026-jenkins'         // Lowercase repo name (GHCR requires lowercase)
+        REGISTRY          = 'ghcr.io'                    // GitHub Container Registry
+        DEPLOY_PATH       = '/root/ecommerce'            // Where on the server to deploy
+        CLIENT_URL        = 'http://167.172.77.230:5173' // Your app's public URL
+        BACKEND_PORT      = '5050'                       // Port backend maps to on host
+        FRONTEND_PORT     = '5173'                       // Port frontend maps to on host
+    }
+
+    stages {
+
+        // ════════════════════════════════════════════════════════════════════
+        // STAGE 1: Checkout
+        // ────────────────────────────────────────────────────────────────────
+        // 'checkout scm' = clone the GitHub repository branch that triggered
+        // this pipeline. Jenkins knows which branch/commit to fetch because
+        // the GitHub webhook tells it.
+        // ════════════════════════════════════════════════════════════════════
+        stage('Checkout') {
+            steps {
+                checkout scm
+                sh 'echo "✔ Branch: $BRANCH_NAME  |  Commit: $(git rev-parse --short HEAD)"'
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // STAGE 2: CI — Backend Tests & Syntax Check
+        // ────────────────────────────────────────────────────────────────────
+        // Equivalent to: ci.yml → job: backend-check
+        // Runs on ALL branches (feature/*, fix/*, main, staging, qa)
+        //
+        // 'npm ci'   = clean install — installs exact versions from lock file
+        // 'npm test' = runs test suite defined in backend/package.json
+        // ════════════════════════════════════════════════════════════════════
+        stage('CI \u2014 Backend Tests') {
+            steps {
+                dir('backend') {           // cd into backend/ folder
+                    sh 'npm ci'
+                    sh 'npm test'
+                }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // STAGE 3: CI — Frontend Build Verification
+        // ────────────────────────────────────────────────────────────────────
+        // Equivalent to: ci.yml → job: frontend-check
+        // Runs on ALL branches
+        //
+        // 'npm run build' = Vite compiles React into static files (dist/)
+        // If there are any import errors or TypeScript issues, it fails here
+        // ════════════════════════════════════════════════════════════════════
+        stage('CI \u2014 Frontend Build') {
+            steps {
+                dir('frontend') {          // cd into frontend/ folder
+                    sh 'npm ci'
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // STAGE 4: CI — Docker Image Verification
+        // ────────────────────────────────────────────────────────────────────
+        // Equivalent to: ci.yml → job: docker-check
+        // Runs on ALL branches
+        //
+        // Builds Docker images with a temporary "ci-check" tag.
+        // Purpose: verify the Dockerfiles are valid and build successfully.
+        // We do NOT push these to GHCR — they're local-only for verification.
+        // The 'post' block at the bottom cleans them up after the pipeline.
+        // ════════════════════════════════════════════════════════════════════
+        stage('CI \u2014 Docker Image Verification') {
+            steps {
+                sh '''
+                    echo "Building backend Docker image (ci-check only, not pushed)..."
+                    docker build -t backend:ci-check ./backend
+
+                    echo "Building frontend Docker image (ci-check only, not pushed)..."
+                    docker build -t frontend:ci-check ./frontend
+
+                    echo "Docker image verification passed!"
+                '''
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // STAGE 5: Security — Dependency Audit (npm audit)
+        // ────────────────────────────────────────────────────────────────────
+        // Equivalent to: security.yml → job: npm-audit
+        // Only runs on: main, staging, qa
+        //
+        // 'npm audit' scans your npm packages for known security vulnerabilities.
+        // '--audit-level=high' = only report HIGH and CRITICAL issues.
+        // '|| true' = don't fail the pipeline even if vulnerabilities are found
+        //             (informational only — you can change this to fail later)
+        // ════════════════════════════════════════════════════════════════════
+        stage('Security \u2014 Dependency Audit') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'staging'
+                    branch 'qa'
+                }
+            }
+            steps {
+                sh '''
+                    echo "=== Auditing Backend npm Packages ==="
+                    cd backend && npm audit --audit-level=high || true
+
+                    echo "=== Auditing Frontend npm Packages ==="
+                    cd ../frontend && npm audit --audit-level=high || true
+                '''
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // STAGE 6: Security — Trivy Container Scan
+        // ────────────────────────────────────────────────────────────────────
+        // Equivalent to: security.yml → job: container-security-scan
+        // Only runs on: main, staging, qa
+        //
+        // Trivy is a security scanner that checks Docker images for:
+        //   - OS-level vulnerabilities (e.g., outdated Alpine packages)
+        //   - Library vulnerabilities (e.g., known CVEs in npm packages)
+        //
+        // We run Trivy itself as a Docker container (no need to install it).
+        // '-v /var/run/docker.sock:/var/run/docker.sock' allows the Trivy
+        // container to access the HOST'S Docker images (backend:ci-check etc.)
+        // '-v /tmp/trivy-cache:/root/.cache' caches vulnerability database
+        //   so it doesn't download fresh on every run (faster).
+        // '--exit-code 0' = report but don't fail (|| true also ensures this)
+        // ════════════════════════════════════════════════════════════════════
+        stage('Security \u2014 Trivy Container Scan') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'staging'
+                    branch 'qa'
+                }
+            }
+            steps {
+                sh '''
+                    echo "=== Scanning backend:ci-check with Trivy ==="
+                    docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -v /tmp/trivy-cache:/root/.cache \
+                        aquasec/trivy:latest image \
+                        --exit-code 0 \
+                        --ignore-unfixed \
+                        --vuln-type os,library \
+                        --severity CRITICAL,HIGH \
+                        --format table \
+                        backend:ci-check
+
+                    echo "=== Scanning frontend:ci-check with Trivy ==="
+                    docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -v /tmp/trivy-cache:/root/.cache \
+                        aquasec/trivy:latest image \
+                        --exit-code 0 \
+                        --ignore-unfixed \
+                        --vuln-type os,library \
+                        --severity CRITICAL,HIGH \
+                        --format table \
+                        frontend:ci-check
+                '''
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // STAGE 7: CD — Build & Push Production Images to GHCR
+        // ────────────────────────────────────────────────────────────────────
+        // Equivalent to: cd.yml → job: build-and-publish
+        // Only runs on: main, staging, qa
+        //
+        // IMAGE TAGGING STRATEGY:
+        //   Each image gets TWO tags:
+        //   1. Versioned:  ghcr.io/sinethch/06-09-2026-jenkins/backend:main-abc1234
+        //                  (unique per commit — you can roll back to any commit)
+        //   2. Latest:     ghcr.io/sinethch/06-09-2026-jenkins/backend:main-latest
+        //                  (always points to the newest commit on that branch)
+        //
+        // 'withCredentials' = Jenkins securely injects GITHUB_TOKEN secret
+        //   from Credentials store (never printed in plain text in logs).
+        //   The variable GH_TOKEN is available as a shell env var inside.
+        // ════════════════════════════════════════════════════════════════════
+        stage('CD \u2014 Build & Push to GHCR') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'staging'
+                    branch 'qa'
+                }
+            }
+            steps {
+                withCredentials([string(credentialsId: 'GITHUB_TOKEN', variable: 'GH_TOKEN')]) {
+                    sh '''
+                        # Compute a short 7-character commit hash (e.g. "abc1234")
+                        SHORT_SHA=$(git rev-parse --short HEAD)
+                        IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}"
+                        REPO="${REGISTRY}/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}"
+
+                        echo "=== Build & Push Summary ==="
+                        echo "Environment : ${BRANCH_NAME}"
+                        echo "Image tag   : ${IMAGE_TAG}"
+                        echo "Registry    : ${REPO}"
+
+                        # Authenticate with GitHub Container Registry
+                        # 'echo ... | docker login --password-stdin' avoids
+                        # the token appearing in process list
+                        echo "${GH_TOKEN}" | docker login ghcr.io \
+                            -u "${GITHUB_REPO_OWNER}" --password-stdin
+
+                        # ── Backend ─────────────────────────────────────────
+                        echo "Building backend image..."
+                        docker build \
+                            -t "${REPO}/backend:${IMAGE_TAG}" \
+                            -t "${REPO}/backend:${BRANCH_NAME}-latest" \
+                            ./backend
+
+                        echo "Pushing backend to GHCR..."
+                        docker push "${REPO}/backend:${IMAGE_TAG}"
+                        docker push "${REPO}/backend:${BRANCH_NAME}-latest"
+
+                        # ── Frontend ────────────────────────────────────────
+                        echo "Building frontend image..."
+                        docker build \
+                            -t "${REPO}/frontend:${IMAGE_TAG}" \
+                            -t "${REPO}/frontend:${BRANCH_NAME}-latest" \
+                            ./frontend
+
+                        echo "Pushing frontend to GHCR..."
+                        docker push "${REPO}/frontend:${IMAGE_TAG}"
+                        docker push "${REPO}/frontend:${BRANCH_NAME}-latest"
+
+                        echo "All images pushed to GHCR successfully!"
+                    '''
+                }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // STAGE 8: CD — Deploy
+        // ────────────────────────────────────────────────────────────────────
+        // Equivalent to: cd.yml → job: deploy
+        // Only runs on: main, staging, qa
+        //
+        // KEY DIFFERENCE from GitHub Actions:
+        //   In GitHub Actions, the deploy step used appleboy/ssh-action to
+        //   SSH INTO the server from a GitHub cloud runner.
+        //
+        //   With Jenkins, we DON'T NEED SSH — because Jenkins IS the server!
+        //   We just run docker compose directly on this machine.
+        //
+        // WHAT THIS STAGE DOES:
+        //   1. Recomputes the image tag (same formula as Stage 7)
+        //   2. Copies docker-compose.deploy.yml to /root/ecommerce/
+        //   3. Sets image environment variables
+        //   4. Runs: docker compose pull  → downloads latest images from GHCR
+        //   5. Runs: docker compose up -d → restarts containers with new images
+        //   6. Prunes old unused images to save disk space
+        // ════════════════════════════════════════════════════════════════════
+        stage('CD \u2014 Deploy') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'staging'
+                    branch 'qa'
+                }
+            }
+            steps {
+                withCredentials([string(credentialsId: 'GITHUB_TOKEN', variable: 'GH_TOKEN')]) {
+                    sh '''
+                        # Same tag formula as Stage 7 — must match exactly
+                        SHORT_SHA=$(git rev-parse --short HEAD)
+                        IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}"
+                        REPO="${REGISTRY}/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}"
+                        BACKEND_IMAGE="${REPO}/backend:${IMAGE_TAG}"
+                        FRONTEND_IMAGE="${REPO}/frontend:${IMAGE_TAG}"
+
+                        echo "=== Deployment Starting ==="
+                        echo "Environment  : ${BRANCH_NAME}"
+                        echo "Backend      : ${BACKEND_IMAGE}"
+                        echo "Frontend     : ${FRONTEND_IMAGE}"
+                        echo "Deploy path  : ${DEPLOY_PATH}"
+
+                        # Create deploy directory if it doesn't exist
+                        mkdir -p "${DEPLOY_PATH}"
+
+                        # Copy docker-compose.deploy.yml from the checked-out
+                        # repo into the deploy directory
+                        cp docker-compose.deploy.yml "${DEPLOY_PATH}/docker-compose.deploy.yml"
+
+                        cd "${DEPLOY_PATH}"
+
+                        # Re-authenticate with GHCR to pull images
+                        echo "${GH_TOKEN}" | docker login ghcr.io \
+                            -u "${GITHUB_REPO_OWNER}" --password-stdin
+
+                        # Pull the latest images for all services
+                        # The BACKEND_IMAGE / FRONTEND_IMAGE variables are read
+                        # by docker-compose.deploy.yml as ${BACKEND_IMAGE} etc.
+                        BACKEND_IMAGE="${BACKEND_IMAGE}" \
+                        FRONTEND_IMAGE="${FRONTEND_IMAGE}" \
+                        CLIENT_URL="${CLIENT_URL}" \
+                        BACKEND_PORT="${BACKEND_PORT}" \
+                        FRONTEND_PORT="${FRONTEND_PORT}" \
+                        docker compose -f docker-compose.deploy.yml pull
+
+                        # Restart all containers with new images
+                        # '--remove-orphans' cleans up containers from old services
+                        BACKEND_IMAGE="${BACKEND_IMAGE}" \
+                        FRONTEND_IMAGE="${FRONTEND_IMAGE}" \
+                        CLIENT_URL="${CLIENT_URL}" \
+                        BACKEND_PORT="${BACKEND_PORT}" \
+                        FRONTEND_PORT="${FRONTEND_PORT}" \
+                        docker compose -f docker-compose.deploy.yml up -d --remove-orphans
+
+                        # Remove Docker images older than 24h to free disk space
+                        docker image prune -af --filter "until=24h" || true
+
+                        echo "=== Deployment Complete! ==="
+                        echo "App is live at: http://167.172.77.230:5173"
+                        echo ""
+                        echo "Running containers:"
+                        docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
+                    '''
+                }
+            }
+        }
+
+    } // ─── end stages ────────────────────────────────────────────────────────
+
+    // ════════════════════════════════════════════════════════════════════════
+    // POST — Always runs after all stages (success or failure)
+    // ────────────────────────────────────────────────────────────────────────
+    // 'always' block: clean up temporary CI images and log out of GHCR
+    //   to avoid credential leakage on a shared Jenkins instance.
+    // '2>/dev/null || true' = suppress errors if image doesn't exist yet
+    //   (e.g., if the pipeline failed before Stage 4 built them)
+    // ════════════════════════════════════════════════════════════════════════
+    post {
+        always {
+            sh '''
+                echo "Cleaning up CI check images..."
+                docker rmi backend:ci-check frontend:ci-check 2>/dev/null || true
+                docker logout ghcr.io 2>/dev/null || true
+                echo "Cleanup done."
+            '''
+        }
+        success {
+            echo "\u2705 Pipeline SUCCESS \u2014 Branch: ${BRANCH_NAME} | Commit: ${GIT_COMMIT}"
+        }
+        failure {
+            echo "\u274c Pipeline FAILED \u2014 Branch: ${BRANCH_NAME} | Check the stage logs above."
+        }
+    }
+
+}
