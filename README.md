@@ -68,9 +68,6 @@ The GitHub Actions workflows provide a second implementation of CI, security sca
 
 ## Proof of implementation
 
-### Application and source repository
-
-The first screenshot captures the running storefront alongside the GitHub repository and the source used to deliver it.
 
 ![MERN storefront running alongside the project source on GitHub](Screenshot%20%286%29.png)
 
