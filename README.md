@@ -68,17 +68,17 @@ The GitHub Actions workflows provide a second implementation of CI, security sca
 
 ## Proof of implementation
 
-### Jenkins pipeline stage view
-
-The captured Jenkins view shows a successful run across checkout, backend and frontend checks, Docker verification, dependency audit, Trivy scan, GHCR publishing, deployment, and post actions.
-
-![Jenkins pipeline stage view showing successful CI, security, image publishing, and deployment stages](Screenshot%20%287%29.png)
-
 ### Application and source repository
 
-The second screenshot captures the running storefront alongside the GitHub repository and the source used to deliver it.
+The first screenshot captures the running storefront alongside the GitHub repository and the source used to deliver it.
 
 ![MERN storefront running alongside the project source on GitHub](Screenshot%20%286%29.png)
+
+### Jenkins pipeline stage view
+
+The second screenshot shows a successful run across checkout, backend and frontend checks, Docker verification, dependency audit, Trivy scan, GHCR publishing, deployment, and post actions.
+
+![Jenkins pipeline stage view showing successful CI, security, image publishing, and deployment stages](Screenshot%20%287%29.png)
 
 ## Why I implemented it
 
