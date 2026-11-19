@@ -1,141 +1,46 @@
-# CI/CD Pipeline, Security & Multi-Environment Deployment Guide
+# Jenkins Pipeline and Deployment Guide
 
-This repository is configured with a robust DevOps toolchain featuring:
-- **Nginx Web Server & Reverse Proxy** (Multi-stage containerized static hosting & API routing)
-- **Husky Pre-commit Automation** (Git hook quality gates)
-- **Dependabot** (Automated dependency updates)
-- **DefenderBot / Security Workflow** (Trivy container scanning & npm audit)
-- **GitHub Actions CI/CD** (`qa`, `staging`, `main`)
+This repository uses Jenkins for CI, security reporting, image publishing, and deployment. The pipeline stages are defined in [`../Jenkinsfile`](../Jenkinsfile). The GitHub Actions workflow files are not part of this pipeline.
 
----
+## Branch behavior
 
-## 1. Branching & Deployment Strategy
+The Jenkinsfile runs checkout, backend checks, frontend builds, and Docker image verification for the branch checked out by the Jenkins job. The dependency audit, Trivy reports, GHCR publish, and Docker Compose deployment stages run only for `main`, `staging`, and `qa`.
 
-```text
- feature/* or fix/*  ──(Husky Pre-commit)──> (Pull Request)──> [CI Pipeline: Tests, Lint, Docker Build Check]
-                                                                          │
-                   ┌──────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┐
-                   ▼                                                      ▼                                                      ▼
-              [qa branch]                                          [staging branch]                                        [main branch]
-                   │                                                      │                                                      │
-                   ▼                                                      ▼                                                      ▼
-         Deploy to QA (Auto)                                   Deploy to Staging (Auto)                              Deploy to Production (Auto/Approved)
+The pipeline does not declare its own webhook or polling trigger. Configure the repository connection and trigger in Jenkins. A multibranch pipeline can discover branch jobs; a webhook or polling schedule must be configured separately if automatic runs are required.
+
+## Jenkins prerequisites
+
+- A Jenkins agent with Docker access, Git, and permission to run Docker builds and Compose deployments.
+- Node.js 20 available to the pipeline's temporary `node:20-alpine` containers.
+- A Jenkins Secret Text credential named `GITHUB_TOKEN`. The token needs permission to publish packages to GHCR and to pull the private images during deployment.
+- Writable access to the configured deployment directory (`/var/lib/jenkins/deploy/ecommerce` in the current Jenkinsfile).
+- The Compose plugin and sufficient host disk, memory, and network access for MongoDB and the application containers.
+
+The optional Jenkins controller in [`docker-compose.jenkins.yml`](../docker-compose.jenkins.yml) mounts the host Docker socket. This grants pipeline jobs broad control of the Docker host. Run trusted pipeline code only and restrict who can change or trigger it.
+
+## Image tags and deployment
+
+For the `main`, `staging`, and `qa` branches, Jenkins builds and publishes backend and frontend images to GHCR. Each image receives a branch-and-commit tag (`<branch>-<short-sha>`) and a branch alias (`<branch>-latest`).
+
+The deploy stage copies [`../docker-compose.deploy.yml`](../docker-compose.deploy.yml) to the deployment directory, authenticates to GHCR, pulls the commit-specific backend and frontend images, then runs `docker compose up -d --remove-orphans`. The Compose stack includes MongoDB with a named data volume. The frontend is published on port `5173` by default and the backend on port `5050`.
+
+The pipeline prints running container details but does not make an HTTP request to confirm the application is healthy after deployment. Check container status and test the frontend and `/api/health` endpoint separately when verifying a deployment.
+
+## Security scan behavior
+
+The pipeline runs `npm audit` for backend and frontend dependencies and Trivy against the locally built application images on `main`, `staging`, and `qa`. These commands are configured to report findings without failing the pipeline. Treat the reports as visibility, not as a blocking security gate.
+
+## Local development
+
+For a local source build, run from the repository root:
+
+```bash
+docker compose up -d --build
 ```
 
-| Environment | Trigger Branch | Primary Purpose | GitHub Environment Protection |
-| :--- | :--- | :--- | :--- |
-| **QA** | `qa` | Functional & QA validation | None (immediate auto-deploy) |
-| **Staging** | `staging` | Pre-production validation & staging tests | Optional approval |
-| **Main** | `main` | Production deployment | Recommended: Required reviewers |
+For the image-based deployment stack, provide the image and environment variables consumed by `docker-compose.deploy.yml`, then run:
 
----
-
-## 2. Nginx Web Server & Reverse Proxy Architecture
-
-The frontend uses a multi-stage Docker build:
-1. **Builder Stage**: `node:20-alpine` runs `npm run build` to generate production static files in `dist/`.
-2. **Runtime Stage**: `nginx:alpine` copies `dist/` into `/usr/share/nginx/html` and serves them with:
-   - Client-side routing fallback: `try_files $uri $uri/ /index.html;`
-   - Gzip compression for CSS, JavaScript, JSON, and SVG.
-   - Reverse proxy for `/api/` requests to `http://backend:5000/api/`, eliminating CORS discrepancies.
-   - Production HTTP security headers (`X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Referrer-Policy`).
-
-Both Port **80** (standard HTTP) and Port **5173** are mapped to Nginx in `docker-compose.deploy.yml` and `docker-compose.yml`.
-
----
-
-## 3. Husky Pre-commit Quality Gates
-
-Husky protects the codebase by executing automated checks before any commit is finalized:
-- **Pre-commit script**: `.husky/pre-commit` triggers `npm run check:all`.
-- **Backend check**: Validates syntax via `node --check src/server.js`.
-- **Frontend check**: Validates compilation via `npm run build --prefix frontend`.
-
-If any check fails, the git commit is rejected until the issue is fixed.
-
----
-
-## 4. Dependabot & DefenderBot Security Automation
-
-### Dependabot (`.github/dependabot.yml`)
-Monitors weekly and automatically submits Pull Requests for outdated or vulnerable dependencies:
-- **npm**: `/`, `/backend`, `/frontend`
-- **Docker**: `/backend`, `/frontend` base image updates
-- **GitHub Actions**: `/` workflow action versions
-
-### DefenderBot / Security Pipeline (`.github/workflows/security.yml`)
-Runs on push/PR and daily at 02:00 UTC:
-- **npm audit**: Scans backend and frontend dependencies for known vulnerabilities.
-- **Trivy Container Scanner**: Scans both backend and frontend (Nginx) Docker container images for CVEs, operating system flaws, and security misconfigurations.
-
----
-
-## 5. Remote Server Deployment Guide
-
-To deploy or upgrade your existing deployment on your remote server:
-
-### Step 1: Connect to the Remote Server
-Open your terminal and SSH into your server:
 ```bash
-ssh <username>@<YOUR_SERVER_HOST>
-```
-
-### Step 2: Navigate to the Project Directory
-```bash
-cd <DEPLOY_PATH>
-```
-
-### Step 3: Update Source Files or Compose Configuration
-If using git on the server:
-```bash
-git pull origin main
-```
-*(Or if using pre-built images with Zero-Touch CD, only `docker-compose.deploy.yml` and `.env` are needed).*
-
-### Step 4: Verify Environment File (`.env`)
-Ensure your environment file contains your server configuration:
-```bash
-cat << 'EOF' > .env
-NODE_ENV=production
-PORT=5000
-MONGO_URI=mongodb://mongodb:27017/ecommerce
-CLIENT_URL=http://<YOUR_SERVER_HOST>:<FRONTEND_PORT>
-VITE_API_BASE_URL=/api
-FRONTEND_IMAGE=ghcr.io/<OWNER>/<REPO>/frontend:main-latest
-BACKEND_IMAGE=ghcr.io/<OWNER>/<REPO>/backend:main-latest
-EOF
-```
-
-### Step 5: Build or Pull and Restart Services with Nginx
-Run Docker Compose with the deploy configuration:
-```bash
-# Pull latest container images
 docker compose -f docker-compose.deploy.yml pull
-
-# Start services in background
 docker compose -f docker-compose.deploy.yml up -d --remove-orphans
 ```
-
-### Step 6: Verify Firewall Rules
-Ensure your designated application ports are permitted:
-```bash
-sudo ufw allow <FRONTEND_PORT>/tcp
-sudo ufw status
-```
-
-### Step 7: Verify Service Health
-Check running containers and test connectivity:
-```bash
-# Check running containers
-docker compose -f docker-compose.deploy.yml ps
-
-# Test Nginx HTTP response locally on server
-curl -I http://localhost:<FRONTEND_PORT>
-
-# Test API health check through Nginx reverse proxy
-curl http://localhost:<FRONTEND_PORT>/api/health
-```
-
-### Step 8: Access UI in Browser
-Open your browser and visit:
-- **Application URL**: `http://<YOUR_SERVER_HOST>:<FRONTEND_PORT>/`

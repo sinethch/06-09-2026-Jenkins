@@ -61,7 +61,6 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         // STAGE 2: CI — Backend Tests & Syntax Check
         // ────────────────────────────────────────────────────────────────────
-        // Equivalent to: ci.yml → job: backend-check
         // Runs on ALL branches (feature/*, fix/*, main, staging, qa)
         //
         // 'npm ci'   = clean install — installs exact versions from lock file
@@ -79,7 +78,6 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         // STAGE 3: CI — Frontend Build Verification
         // ────────────────────────────────────────────────────────────────────
-        // Equivalent to: ci.yml → job: frontend-check
         // Runs on ALL branches
         //
         // 'npm run build' = Vite compiles React into static files (dist/)
@@ -97,7 +95,6 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         // STAGE 4: CI — Docker Image Verification
         // ────────────────────────────────────────────────────────────────────
-        // Equivalent to: ci.yml → job: docker-check
         // Runs on ALL branches
         //
         // Builds Docker images with a temporary "ci-check" tag.
@@ -122,7 +119,6 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         // STAGE 5: Security — Dependency Audit (npm audit)
         // ────────────────────────────────────────────────────────────────────
-        // Equivalent to: security.yml → job: npm-audit
         // Only runs on: main, staging, qa
         //
         // 'npm audit' scans your npm packages for known security vulnerabilities.
@@ -152,7 +148,6 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         // STAGE 6: Security — Trivy Container Scan
         // ────────────────────────────────────────────────────────────────────
-        // Equivalent to: security.yml → job: container-security-scan
         // Only runs on: main, staging, qa
         //
         // Trivy is a security scanner that checks Docker images for:
@@ -206,7 +201,6 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         // STAGE 7: CD — Build & Push Production Images to GHCR
         // ────────────────────────────────────────────────────────────────────
-        // Equivalent to: cd.yml → job: build-and-publish
         // Only runs on: main, staging, qa
         //
         // IMAGE TAGGING STRATEGY:
@@ -279,19 +273,11 @@ pipeline {
         // ════════════════════════════════════════════════════════════════════
         // STAGE 8: CD — Deploy
         // ────────────────────────────────────────────────────────────────────
-        // Equivalent to: cd.yml → job: deploy
         // Only runs on: main, staging, qa
-        //
-        // KEY DIFFERENCE from GitHub Actions:
-        //   In GitHub Actions, the deploy step used appleboy/ssh-action to
-        //   SSH INTO the server from a GitHub cloud runner.
-        //
-        //   With Jenkins, we DON'T NEED SSH — because Jenkins IS the server!
-        //   We just run docker compose directly on this machine.
         //
         // WHAT THIS STAGE DOES:
         //   1. Recomputes the image tag (same formula as Stage 7)
-        //   2. Copies docker-compose.deploy.yml to /root/ecommerce/
+        //   2. Copies docker-compose.deploy.yml to DEPLOY_PATH
         //   3. Sets image environment variables
         //   4. Runs: docker compose pull  → downloads latest images from GHCR
         //   5. Runs: docker compose up -d → restarts containers with new images

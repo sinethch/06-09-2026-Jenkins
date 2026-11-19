@@ -32,9 +32,3 @@ updates:
     directory: "/backend"
     schedule:
       interval: "weekly"
-
-  # GitHub Actions CI/CD workflows
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
